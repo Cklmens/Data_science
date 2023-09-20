@@ -1,0 +1,150 @@
+---
+title: "projet data"
+author: "jjj"
+date: "2023-01-15"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readxl)
+library(tidyverse)
+library(tidymodels)
+library(tidytext)
+library(textrecipes)
+```
+
+Charger le dataset brut frace à la fonction read_csv()
+
+```{r }
+udemy_courses <- read_excel("C:\\Users\\hp\\Documents\\FID2\\Rproject\\udemy_output_All_Finance__Accounting_p1_p625.xlsx")
+
+View(udemy_courses)
+```
+
+```{r pressure, echo=FALSE}
+glimpse(udemy_courses)
+```
+verifier s'il n'y a pas de valeur manquantes
+```{r}
+summary(is.na(udemy_courses))
+```
+On remarque que seul les 6 dernieres colonnes on des valeurs manquantes
+```{r}
+udemy_na<-udemy_courses %>% drop_na()
+glimpse(udemy_na)
+```
+```{r}
+is_paid_view<- udemy_na %>% group_by(is_paid) %>% summarise(n=n())%>% mutate(taux=round(n/ sum(n),2)*100)
+is_paid_view
+
+```
+
+```{r}
+udemy_na<- transform(udemy_na,
+                            created=as.Date(created,"%Y-%m-%d"), 
+                            published_time=as.Date(published_time,"%Y-%m-%d")
+                         
+                            )
+
+udemy_na<-udemy_na %>% select(-c(rating,avg_rating_recent))
+
+head(udemy_na)
+
+```
+
+
+```{r}
+udemy_title<- udemy_na %>% select("title", avg_rating, discount_price__amount, price_detail__amount) %>%  slice(1:10000) %>% unnest_tokens(word,title)
+udemy_title
+
+```
+
+
+```{r}
+most_comon_words<- udemy_title %>% anti_join(get_stopwords(), by="word"  ) %>%  count(avg_rating,discount_price__amount, price_detail__amount, word, sort=TRUE)  %>% group_by(word)%>% summarise(n=sum(n), avg_rating=mean(avg_rating),  discount_mean=mean(discount_price__amount), detail_mean=mean(price_detail__amount)) %>% arrange(desc(n))
+most_comon_words
+
+```
+```{r}
+most_comon_words<- udemy_title %>% anti_join(get_stopwords(), by="word"  ) %>%  count(word, sort=TRUE) %>% filter(n>200) %>% mutate(word=reorder(word,n)) %>% ggplot(mapping = aes(n,word)) + geom_col()
+most_comon_words
+```
+```{r}
+
+
+```
+
+
+
+
+
+12205 est une taille assez signifiante pour un dataset. Nous optons pour supprimer les aleurs manquantes plutot que de les transformer.
+
+Maintenant, nous allons selectionner les futures qui seont pris en compte lors de l'apprentissage. On exclut donc id, url,
+```{r}
+udemy_features<- udemy_courses %>% select(-c(id,url,discount_price__currency,price_detail__currency))%>% separate(created,into= c("year_created",NA),sep=" ")%>% separate(published_time,into= c("date_published",NA),sep=" ")%>% separate(year_created,into= c("year_ceated",NA,NA),sep="-")%>% separate(date_published,into= c("published_year",NA,NA),sep="-")
+udemy_features
+```
+
+```{r}
+udemy_na <- udemy_courses %>% 
+  mutate(discount_price__amount=replace_na(discount_price__amount,mean(discount_price__amount,na.rm=TRUE))) %>% 
+  mutate(price_detail__amount =replace_na(price_detail__amount,mean(price_detail__amount,na.rm=TRUE)))
+summary(is.na(udemy_na))
+
+```
+```{r}
+filter(udemy_na, avg_rating_recent!=rating )
+```
+```{r}
+udemy_na<- udemy_courses %>% select(-c(avg_rating_recent,title))
+```
+```{r}
+udemy_fin<- udemy_courses %>% select(-c(id,url,title,is_wishlisted,price_detail__currency,discount_price__currency))
+```
+
+
+```{r}
+#udemy_na<-udemy_na %>% select(-avg_rating)
+```
+```{r}
+udemy_fin=udemy_na %>% slice(12000:13608)
+udemy_split<- initial_split(udemy_fin, prop= 0.8, strata= avg_rating)
+udemy_train<- training(udemy_split)
+udemy_test<- testing(udemy_split)
+
+```
+```{r}
+```
+```{r}
+lin_spec<- linear_reg(mode= "regression", engine="lm")
+dec_spec<- decision_tree(mode="regression", engine= "rpart")
+rf_spec<- rand_forest(mode="regression", engine="ranger")
+
+```
+
+Cross validation
+```{r}
+folds<- vfold_cv(udemy_train, v=10)
+```
+```{r}
+res_reg<- fit_resamples(lin_spec, rating~., resamples=folds) %>% collect_metrics(summarize= TRUE)
+res_reg
+res_dec<- fit_resamples(dec_spec,rating~., resamples= folds) %>% collect_metrics(summarize=TRUE)
+res_dec
+res_rf<- fit_resamples(rf_spec,rating~., resamples= folds) %>% collect_metrics(summarize=TRUE)
+res_rf
+```
+
+
+```{r}
+  data_test<- testing(initial_split(slice(udemy_fin,300:2000),prop=0.8, strata=rating))
+  res_reg<- fit(lin_spec, rating~., data= udemy_train) %>% predict(new_data = data_test) %>% 
+  mutate(truth =data_test$rating)  
+  
+res_reg
+
+```
+
+

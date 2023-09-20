@@ -1,0 +1,262 @@
+---
+title: "bank_chuner"
+output:
+  html_document: default
+  pdf_document: default
+date: "2022-11-28"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(tidymodels)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+library(readxl)
+BankChurners <- read_excel("C:\\Users\\hp\\Documents\\FID2\\Rproject\\BankChurners.xlsx")
+
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+Analyse Exploratory
+```{r}
+glimpse(BankChurners)
+
+```
+
+```{r}
+gender_attrition<-BankChurners %>% group_by(Attrition_Flag) %>% summarise(n=n()) %>% mutate(taux=round(n/ sum(n),2)*100)
+gender_attrition
+```
+
+
+```{r}
+gender_view<-BankChurners %>% group_by(Gender) %>% summarise(n=n())%>% mutate(taux=round(n/ sum(n),2)*100)
+gender_view
+```
+
+```{r}
+status_view<-BankChurners %>% group_by(Marital_Status) %>% summarise(n=n())%>% mutate(taux=round(n/ sum(n),2)*100)
+status_view
+```
+
+```{r}
+age_view<-BankChurners %>% summarise(age_min=min(Customer_Age),age_mean=mean(Customer_Age), age_max=max(Customer_Age))
+age_view
+
+ggplot(BankChurners, mapping = aes(x = Customer_Age, fill=Gender))+ geom_histogram(color="white") + facet_wrap(~Gender)
+```
+
+```{r}
+level_view<- BankChurners %>% group_by(Education_Level) %>% summarise(n=n())%>% mutate(taux=round(n/ sum(n),2)*100)
+level_view
+
+ggplot(data = level_view, mapping = aes(x=Education_Level, y=taux))+
+  geom_col()
+```
+
+```{r}
+level_view<- BankChurners %>% group_by(Attrition_Flag,Education_Level) %>% summarise(n=n())%>% mutate(taux=round(n/ sum(n),2)*100)
+level_view
+
+ggplot(data = level_view, mapping = aes(x=Education_Level, y=taux))+
+  geom_col()
+```
+
+
+```{r}
+BankChurnersNUM<-transform(BankChurners[,-1],
+                           Attrition_Flag=as.integer(factor(Attrition_Flag)),
+                           Gender=as.integer(factor(Gender)),
+                           Education_Level=as.integer(factor(Education_Level)),
+                           Marital_Status=as.integer(factor(Marital_Status)),
+                           Income_Category=as.integer(factor(Income_Category)),
+                           Card_Category=as.integer(factor(Card_Category)),
+                          Avg_Open_To_Buy =as.integer(factor(Avg_Open_To_Buy)),
+                           Total_Amt_Chng_Q4_Q1=as.integer(factor(Total_Amt_Chng_Q4_Q1)),
+                           Total_Ct_Chng_Q4_Q1=as.integer(factor(Total_Ct_Chng_Q4_Q1)),
+                          Avg_Utilization_Ratio=as.integer(factor(Avg_Utilization_Ratio)),
+                          Credit_Limit=as.integer(factor(Credit_Limit))
+                          
+)
+head(BankChurnersNUM)
+ncor<- cor(BankChurnersNUM)
+```
+
+
+```{r}
+library(corrplot)
+#visualize correlation matrix
+par(mfrow = c(1, 1))
+corrplot(ncor)
+```
+
+
+```{r}
+library(corrplot)
+#visualize correlation matrix
+par(mfrow = c(1, 1))
+corrplot(ncor)
+
+```
+
+```{r}
+level_view<- BankChurners %>% group_by(Education_Level) %>% summarise(n=n()) 
+level_view
+
+
+```
+
+
+```{r}
+income_view<- BankChurners %>% filter(Gender=='F') %>% group_by(Income_Category) %>% summarise(n=n()) %>% mutate(taux=round(n/ sum(n),2)*100)
+income_view
+
+ggplot(data = income_view, mapping = aes(x=Income_Category, y=taux))+
+  geom_col()
+
+```
+```{r}
+card_view<- BankChurners  %>% group_by(Card_Category) %>% summarise(n=n()) %>% mutate(taux=round(n/ sum(n),2)*100)
+card_view
+
+ggplot(data = card_view, mapping = aes(x= Card_Category, y=taux))+
+  geom_col()
+
+
+
+```
+```{r}
+unknown_view <- BankChurners %>% group_by(Education_Level,Income_Category) %>% summarise(n=n()) 
+unknown_view 
+```
+```{r}
+unknown_view_ex <- BankChurners %>% filter(Income_Category=="Unknown"| Education_Level=="Unknown") %>%  summarise(n=n())
+unknown_view_ex
+```
+
+```{r}
+tree_mod <- decision_tree() %>% set_engine("rpart") %>% set_mode("classification")
+tree_mod
+```
+```{r}
+kmean_mod <- nearest_neighbor() %>% set_engine("kknn") %>% set_mode("classification")
+kmean_mod
+```
+```{r}
+rf_mod <- rand_forest() %>% set_engine("ranger") %>% set_mode("classification")
+rf_mod
+```
+
+```{r}
+logreg_mod <- logistic_reg()
+logreg_mod
+```
+
+
+```{r}
+BankChurnersT<- BankChurners  %>% select(-c(CLIENTNUM, Education_Level, Card_Category,Gender,Dependent_count,Marital_Status,Months_on_book,Income_Category, Customer_Age))%>% slice(1:2000)
+
+
+income_data <- BankChurnersT %>% initial_split(prop=0.8)
+income_data_training<- training(income_data)
+income_data_test <- testing(income_data)
+```
+
+```{r}
+rec <-recipe(Attrition_Flag~.,data =income_data_training ) %>% step_impute_bag(impute_with=imp_vars(all_predictors()) ) %>%
+  step_dummy(all_nominal_predictors())  %>%
+  step_corr(all_predictors()) %>% 
+step_normalize(all_numeric_predictors()) 
+   
+rec
+
+```
+
+
+```{r}
+model_list <- list(kmean_mod,tree_mod,rf_mod,logreg_mod)
+model_list
+```
+
+
+
+```{r}
+income_wf_kknn<- workflow() %>% add_model(kmean_mod) %>%  add_recipe(rec)
+```
+
+```{r}
+income_wf_rf<- workflow() %>% add_model(rf_mod) %>%  add_recipe(rec)
+```
+
+```{r}
+income_wf_dt<- workflow() %>% add_model(tree_mod) %>%  add_recipe(rec)
+```
+
+```{r}
+income_wf_logrec<- workflow() %>% add_model(logreg_mod) %>%  add_recipe(rec)
+```
+
+
+```{r}
+set.seed(10)
+cv_flods <- vfold_cv(income_data_training,v=10)
+```
+
+
+```{r}
+income_dt_met <- income_wf_dt %>%  fit_resamples(resamples = cv_flods)   %>% collect_metrics(summarise=TRUE)
+income_dt_met
+```
+
+
+```{r}
+income_kknn_met <- income_wf_kknn %>%  fit_resamples(resamples = cv_flods)   %>% collect_metrics(summarise=TRUE)
+income_kknn_met
+```
+
+
+```{r}
+income_logrec_met <- income_wf_logrec %>%  fit_resamples(resamples = cv_flods)   %>% collect_metrics(summarise=TRUE)
+income_logrec_met
+```
+
+
+```{r}
+income_rf_met <- income_wf_rf %>%  fit_resamples(resamples = cv_flods)   %>% collect_metrics(summarise=TRUE)
+income_rf_met
+```
+
+
+```{r}
+
+income_metrics<- list(income_logrec_met,income_rf_met,income_dt_met,income_kknn_met)
+
+```
+
+
+```{r}
+income_metrics
+
+```
+
+```{r}
+library(Factoshiny)
+data<-temp
+res<-Factoshiny(data)
+```
+
