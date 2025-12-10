@@ -1,0 +1,518 @@
+---
+title: "Gueule de bois"
+output:
+  html_document: default
+date: "2022-11-28"
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(tidymodels)
+library(parsnip)
+library(e1071)
+library(brms)
+library(discrim)
+library(yardstick)
+library(pROC)
+library(ggplot2)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+library(readxl)
+Hangover <- read_excel("C:\\Users\\djana\\OneDrive\\Documents\\GitHub\\Fiverr\\Hangover.xlsx")
+View(Hangover)
+
+
+```
+
+Analyse Exploratory
+
+```{r}
+glimpse(Hangover)
+
+```
+
+## R Markdown
+
+# Présentation des variables
+
+Le jeu de données contient 25 colonnes et 100 observations. Voici un résumé des variables :
+
+## Variable cible (à prédire) :
+
+-   **GDB** : Indique la fréquence des gueules de bois.\
+    Valeurs possibles : "Souvent", "Rarement", etc.
+
+## Variables explicatives :
+
+-   **Sexe** : Genre de l'individu (Homme, Femme).
+-   **Age** : Catégorie d'âge (18-25 ans, 26-35 ans, etc.).
+-   **Poid** : Catégorie de poids (Moins de 50 kg, 50-70 kg, etc.).
+-   **HabitudesConso** : Habitudes générales de consommation d'alcool (Souvent, Parfois, etc.).
+-   **FrequenceConsommation** : Fréquence de consommation d'alcool (1 à 2 fois, 3 à 5 fois, etc.).
+-   **Sensibilité** : Sensibilité personnelle à l'alcool (Beaucoup, Moyennement, Très peu).
+-   **Symptomes** : Fréquence des symptômes liés à l'alcool (Fréquemment, Rarement, etc.).
+-   **Alimentation** : Type d'alimentation avant ou après la consommation (Oui, une petite collation, Non, rien du tout).
+-   **PriseAlimentaire** : Moment de la prise alimentaire (Avant de boire, Après avoir bu, etc.).
+-   **Soft** : Consommation de boissons non alcoolisées (Oui, Non, Peu).
+-   **Sommeil** : Durée de sommeil après consommation (Beaucoup, Très peu, etc.).
+-   **NbVerres** : Nombre de verres consommés (texte ou numérique).
+-   **TypeAlcool** : Type(s) d'alcool consommé(s).
+-   **Mélange** : Mélange de différents types d'alcool (Oui, Non).
+-   **Durée** : Durée de la consommation (Courte, Longue, etc.).
+-   **MomentConso** : Moment de la consommation (Soirée, Nuit, etc.).
+-   **ContexteFestif** : Contexte festif (Oui, Non).
+-   **PbSanté** : Problèmes de santé existants (Oui, Non).
+-   **Environnement** : Type d'environnement (Tempéré, Chaud, etc.).
+-   **ActivitéPhys** : Pratique d'activité physique (Oui, Non).
+-   **StresseFatigue** : Niveau de stress ou fatigue (Oui, un peu, Non).
+-   **AutresSubstances** : Consommation d'autres substances (Oui, une seule, Non).
+-   **OccurrenceGDB** : Occurrence de la gueule de bois (Oui, Non).
+-   **MesuresContreGDB** : Actions prises contre la gueule de bois (Oui, plusieurs, Non).
+
+```{r}
+summary(is.na(Hangover))
+```
+## Analyse descriptive des variables
+
+
+```{r}
+client_sexe<-Hangover %>% group_by(Sexe) %>% summarise(n=n()) %>% mutate(taux=round(n/ sum(n),2)*100)
+client_sexe
+ggplot(data = client_sexe, mapping = aes(x=Sexe, y=taux))+
+  geom_col(fill="lightblue")
+```
+
+```{r}
+HabitudesConso_view<-Hangover %>% group_by(HabitudesConso) %>% summarise(n=n())%>% mutate(taux=round(n/ sum(n),2)*100)
+HabitudesConso_view
+ggplot(data = HabitudesConso_view, mapping = aes(x=HabitudesConso , y=taux))+
+  geom_col(fill="lightgreen")
+```
+
+```{r}
+
+```
+
+```{r}
+Soft_view<-Hangover %>% group_by(Soft) %>% summarise(n=n())%>% mutate(taux=round(n/ sum(n),2)*100)
+Soft_view
+ggplot(data = Soft_view, mapping = aes(x=Soft, y=taux))+
+  geom_col(fill="lightblue")
+
+```
+
+```{r}
+Sommeil_view<- Hangover %>% group_by(Sommeil) %>% summarise(n=n())%>% mutate(taux=round(n/ sum(n),2)*100)
+Sommeil_view
+
+ggplot(data = Sommeil_view, mapping = aes(x=Sommeil, y=taux))+
+  geom_col(fill="lightblue")
+
+```
+
+```{r}
+ActivitéPhys_view<- Hangover %>% group_by(ActivitéPhys) %>% summarise(n=n())%>% mutate(taux=round(n/ sum(n),2)*100)
+ActivitéPhys_view
+ggplot(data = ActivitéPhys_view, mapping = aes(x=ActivitéPhys, y=taux))+
+  geom_col(fill="lightblue")
+```
+
+```{r}
+PbSanté_view<- Hangover %>% group_by(PbSanté ) %>% summarise(n=n()) %>% mutate(taux=round(n/ sum(n),2)*100)
+PbSanté_view
+
+ggplot(data =PbSanté_view, mapping = aes(x=PbSanté, y=taux))+
+  geom_col(fill="lightblue")
+
+```
+
+```{r}
+Age_view<- Hangover  %>% group_by(Age) %>% summarise(n=n()) %>% mutate(taux=round(n/ sum(n),2)*100)
+Age_view
+
+ggplot(data = Age_view, mapping = aes(x= Age, y=taux))+
+  geom_col(fill="lightblue")
+```
+## Nettoyage:
+
+- Toutes les colonnes sont interprétées comme des chaînes de caractères (object). Un prétraitement est nécessaire pour convertir certaines variables en facteurs ou numériques si elles ne le sont pas.
+- Certaines réponses comme les fréquences (Rarement, Souvent, Non) nécessitent d’être unifiées et ordonnées.
+
+```{r}
+HangoverN<-transform(Hangover[0:22],
+                           Sexe=as.integer(factor(Sexe)),
+                           Age=as.integer(factor(Age)),
+                           Poid=as.integer(factor(Poid)),
+                           FrequenceConsommation=as.integer(factor(FrequenceConsommation)),
+                           HabitudesConso=as.integer(factor(HabitudesConso)),
+                           Sensibilité=as.integer(factor(Sensibilité)),
+                           PriseAlimentaire=as.integer(factor(PriseAlimentaire)),
+                            Soft=as.integer(factor(Soft)),
+                           Sommeil=as.integer(factor(Sommeil)),
+                           NbVerres=as.integer(factor(NbVerres)),
+                           TypeAlcool=as.integer(factor(TypeAlcool)),
+                           Mélange=as.integer(factor(Mélange)),
+                           Alimentation=as.integer(factor(Alimentation)),
+                            PbSanté=as.integer(factor(PbSanté)),
+                            ActivitéPhys =as.integer(factor(ActivitéPhys)),
+                           StresseFatigue=as.integer(factor(StresseFatigue)),
+                           AutresSubstances=as.integer(factor(AutresSubstances)),
+                            Durée=as.integer(factor(Durée)),
+                            MomentConso =as.integer(factor(MomentConso)),
+                           ContexteFestif=as.integer(factor(ContexteFestif)),
+                           Environnement=as.integer(factor(Environnement)),
+                           Symptomes=as.integer(factor(Symptomes)))
+
+head(HangoverN)
+ncor<- cor(HangoverN)
+ncor
+```
+
+```{r}
+
+
+```
+
+# Visualisation des corrélation entre variables explicatives
+
+La corélation nous permet de definir toutes dépendences entre variables explicatives
+
+```{r}
+library(corrplot)
+#visualize correlation matrix
+par(mfrow = c(1, 1))
+corrplot(ncor)
+```
+
+# Recodage des variables de chaine de caractère en données factorielles
+
+```{r}
+HangoverN<-transform(Hangover[0:23],
+                           Sexe=factor(Sexe),
+                           Age=factor(Age),
+                           Poid=factor(Poid),
+                           FrequenceConsommation=factor(FrequenceConsommation),
+                           HabitudesConso=factor(HabitudesConso),
+                           Sensibilité=factor(Sensibilité),
+                           PriseAlimentaire=factor(PriseAlimentaire),
+                            Soft=factor(Soft),
+                           Sommeil=factor(Sommeil),
+                           NbVerres=factor(NbVerres),
+                           TypeAlcool=factor(TypeAlcool),
+                           Mélange=factor(Mélange),
+                           Alimentation=factor(Alimentation),
+                            PbSanté=factor(PbSanté),
+                            ActivitéPhys =factor(ActivitéPhys),
+                           StresseFatigue=factor(StresseFatigue),
+                           AutresSubstances=factor(AutresSubstances),
+                            Durée=factor(Durée),
+                            MomentConso =factor(MomentConso),
+                           ContexteFestif=factor(ContexteFestif),
+                           Environnement=factor(Environnement),
+                           Symptomes=factor(Symptomes),
+                          GDB=factor(GDB))
+                          
+head(HangoverN)
+
+```
+
+```{r}
+HangoverT<- HangoverN 
+glimpse(HangoverT)
+```
+
+# Divisier nos données en données de test et d'entrainement
+
+```{r}
+hangover_data <- HangoverT %>% initial_split(prop=0.8)
+data_training<- training(hangover_data)
+data_test <- testing(hangover_data)
+
+```
+
+### Régression GLM :
+
+La régression GLM permet de modéliser des relations entre une variable dépendante et une ou plusieurs variables indépendantes
+
+
+
+```{r}
+fac <-"gueule de bois"
+pred<-2
+
+glm_mod <- glm(GDB ~Sexe + Age + Poid + FrequenceConsommation + HabitudesConso + Sensibilité + PriseAlimentaire + Soft + Sommeil + NbVerres + TypeAlcool + Mélange + Alimentation + PbSanté + ActivitéPhys + StresseFatigue + AutresSubstances + Durée + MomentConso + ContexteFestif + Environnement +Symptomes , family = binomial(), data = data_training)
+
+# Prédictions de probabilité sur l'ensemble de test
+predictions_prob <- predict(glm_mod, newdata = data_test, type = "response")
+
+# Prédictions de classe (0 ou 1)
+predictions_class <- ifelse(predictions_prob > 0.5, 1, 0)
+
+# Confusion matrix
+conf_matrix <- table(Predicted = predictions_class, Actual = data_test$GDB)
+
+# Accuracy
+accuracy_glm <- sum(diag(conf_matrix)) / sum(conf_matrix)
+
+# Precision
+precision <- conf_matrix[2, 2] / (conf_matrix[2, 2] + conf_matrix[1, 2])
+
+# Recall (Sensitivity)
+recall <- conf_matrix[2, 2] / (conf_matrix[2, 2] + conf_matrix[2, 1])
+
+# F1-score
+f1_score_glm <- 2 * (precision * recall) / (precision + recall)
+
+
+
+# Print metrics
+print(paste("Accuracy: ", accuracy_glm))
+
+print(paste("F1-score: ", f1_score_glm))
+
+
+```
+
+### Naive Bayes :
+
+Le classificateur Naive Bayes est basé sur le théorème de Bayes et suppose que les caractéristiques sont indépendantes les unes des autres, ce qui simplifie le calcul des probabilités conditionnelles pour la classification.
+
+
+```{r}
+# Fit the Naive Bayes model
+nb_model <- naiveBayes(GDB ~ Sexe + Age + Poid + FrequenceConsommation + HabitudesConso + Sensibilité + PriseAlimentaire + Soft + Sommeil + NbVerres + TypeAlcool + Mélange + Alimentation + PbSanté + ActivitéPhys + StresseFatigue + AutresSubstances + Durée + MomentConso + ContexteFestif + Environnement +Symptomes, data =data_training)
+
+# Predictions on the test data
+predictions_class <- predict(nb_model, newdata = data_test)  # Predicted class
+predictions_prob <- predict(nb_model, newdata = data_test, type = "raw")  # Predicted probabilities
+
+# Confusion Matrix and Accuracy
+conf_matrix <- table(Predicted = predictions_class, Actual = data_test$GDB)
+accuracy_bayes <- sum(diag(conf_matrix)) / sum(conf_matrix)
+
+# Precision
+precision <- conf_matrix[2, 2] / (conf_matrix[2, 2] + conf_matrix[1, 2])
+
+# Recall (Sensitivity)
+recall <- conf_matrix[2, 2] / (conf_matrix[2, 2] + conf_matrix[2, 1])
+
+# F1-score
+f1_score_ <- 2 * (precision * recall) / (precision + recall)
+f1_score_bayes <- 2 * (precision * recall) / (precision + recall)
+
+
+# Print metrics
+print(paste("Accuracy: ", accuracy_bayes))
+
+print(paste("F1-score: ", f1_score_bayes))
+
+```
+
+```{r}
+
+
+```
+### Arbre de décision :
+
+L'arbre de décision est un modèle de classification et de régression qui divise les données en sous-ensembles basés sur des règles de décision, facilitant ainsi la prise de décisions à chaque nœud de l'arbre.
+
+
+```{r}
+# Créer le modèle d'arbre de décision
+tree_mod <- decision_tree() %>% 
+  set_engine("rpart") %>% 
+  set_mode("classification")
+
+# Entraînement du modèle avec data_training
+tree_fit <- tree_mod %>% 
+  fit(GDB ~ Sexe + Age + Poid + FrequenceConsommation + HabitudesConso + Sensibilité + PriseAlimentaire + Soft + Sommeil + NbVerres + TypeAlcool + Mélange + Alimentation + PbSanté + ActivitéPhys + StresseFatigue + AutresSubstances + Durée + MomentConso + ContexteFestif + Environnement +Symptomes, data = data_training)
+
+# Faire des prédictions avec data_test
+predictions <- predict(tree_fit, new_data = data_test)
+print(as.integer(factor(predictions$.pred_class)))
+# Convertir les prédictions en facteur pour la métrique F1
+predictions <- predictions %>% 
+  bind_cols(data_test %>% select(GDB)) %>%
+  rename(.pred_class = .pred_class)
+
+# Calculer les métriques : Accuracy et F1
+metrics <- predictions %>% 
+  metrics(truth = GDB, estimate = .pred_class)
+
+# Afficher les résultats
+
+# Afficher explicitement l'Accuracy et le F1
+accuracy_tree <- metrics %>% filter(.metric == "accuracy") %>% pull(.estimate)
+f1_score <- metrics %>% filter(.metric == "f1") %>% pull(.estimate)
+f1_score_tree <- f1_score_
+
+print(paste("Accuracy: ", accuracy_tree))
+print(paste("F1 Score: ", round(f1_score_tree,1)))
+
+
+```
+
+```{r}
+
+library(rpart)
+library(rpart.plot)
+ plot_rpart<- rpart(HangoverT$GDB ~., data = HangoverT)
+ rpart.plot(plot_rpart)
+
+
+```
+
+```{r}
+saveRDS(tree_fit, "model_dt.rds")
+saveRDS(nb_model, "model_bayes.rds")
+saveRDS(glm_mod, "model_glm.rds")
+
+```
+
+```{r}
+library(shiny)
+library(caret)
+library(tidymodels)
+library(shinyalert)  # Add shinyalert
+
+# Define the User Interface
+ui <- fluidPage(
+  useShinyalert(),  # Initialize shinyalert
+  titlePanel("Prédiction de la gueule de bois après Consommation d'Alcool"),
+  
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("model_type", "Choisissez un modèle:",
+                  choices = c("Naive Bayes", "Arbre de Decision","GLM")),
+      actionButton("predict", "Prédire"),
+      selectInput("Sexe", "Sexe:", choices = c("Femme", "Homme", "Autres")),
+      selectInput("Age", "Âge:", choices = c("18-25 ans", "26-35 ans", "36-45 ans", "46 ans ou plus")),
+      selectInput("Poid", "Poids:", choices = c("Moins de 50 kg", "50-70 kg", "71-90 kg", "Plus de 90 kg")),
+      selectInput("HabitudesConso", "Habitudes de Consommation:", choices = c("Souvent", "Parfois", "Jamais", "Rarement")),
+      selectInput("FrequenceConsommation", "Fréquence de Consommation:", choices = c( "Pas du tout","1 a 2 fois", "3 a 5 fois", "Plus de 5 fois")),
+      selectInput("Sensibilité", "Sensibilité:", choices = c("Beaucoup", "Moyennement", "Tres peu")),
+      selectInput("Symptomes", "Symptômes:", choices = c("frequement", "Rarement", "occasionnellement", "Jamais")),
+      selectInput("Alimentation", "Alimentation:", choices = c("Oui, une petite collation", "Non, rien du tout", "Oui, un repas copieux")),
+      selectInput("Durée", "Durée de la Consommation:", choices = c("Moins d’une heure", "1h à 3h", "Plus de 3 heures")),
+      selectInput("MomentConso", "Moment de la Consommation:", choices = c("Journee", "Nuit", "Soiree")),
+      selectInput("ContexteFestif", "Contexte Festif:", choices = c("Oui", "Non")),
+      selectInput("PbSanté", "Problèmes de Santé:", choices = c("Oui", "Non")),
+      selectInput("Environnement", "Environnement:", choices = c("Chaud", "Froid", "Tempere")),
+      selectInput("ActivitéPhys", "Activité Physique:", choices = c("Non", "Oui")),
+      selectInput("StresseFatigue", "Stress ou Fatigue:", choices = c("Non", "Oui, un peu", "Oui, beaucoup")),
+      selectInput("AutresSubstances", "Autres Substances:", choices = c("Non", "Oui, une seule", "Oui, plusieurs")),
+      selectInput("PriseAlimentaire", "Prise Alimentaire:", choices = c("Avant de boire", "Apres avoir bu", "Pendant la consommation", "Jamais")),
+      selectInput("Soft", "Consommation de Softs:", choices = c("Non", "Peu", "Regulierement")),
+      selectInput("Sommeil", "Sommeil:", choices = c("Moins de 4 heures", "4 a 6 heures", "Plus de 6 heures")),
+      selectInput("NbVerres", "Nombre de Verres:", choices = c("Moins de 3", "3 a 5", "6 a 8", "Plus de 8", "Je ne m’en souviens plus")),
+      selectInput("TypeAlcool", "Type d'Alcool:", choices = c("Bière", "Melange", "Spiritueux", "Vin")),
+      selectInput("Mélange", "Mélange d'Alcool:", choices = c("Non", "Oui"))
+    ),
+    
+    mainPanel(
+      h3("Résultat de la Prédiction"),
+      verbatimTextOutput("prediction"),
+      h3("Métriques de Performance: Accuracy"),
+      verbatimTextOutput("accuracy"),
+      h3("Métriques de Performance: F1 Pecision"),
+      verbatimTextOutput("f1"),
+    )
+  )
+)
+
+server <- function(input, output) {
+  
+  # Load or train different models based on user selection
+  observeEvent(input$predict, {
+    # Define the model based on user choice
+  if (input$model_type == "GLM") {
+      model_glm <- readRDS("model_glm.rds")  # Load pre-trained Logistic Regression model
+      model <- model_glm
+      accuracy_result <- accuracy_glm
+      f1_result <- f1_score_glm
+      prediction_result<- pred
+      result <- fac
+      
+    } else if (input$model_type == "Naive Bayes") {
+      model_nb <- readRDS("model_bayes.rds")  # Load pre-trained Naive Bayes model
+      model <- model_nb
+      accuracy_result <- accuracy_bayes
+      f1_result <- f1_score_bayes
+    }  
+    else if (input$model_type == "Arbre de Decision") {
+      model_dt <- readRDS("model_dt.rds")  # Load pre-trained Decision Tree model
+      model <- model_dt
+      accuracy_result <- accuracy_tree
+      f1_result <- f1_score_tree
+    } 
+    
+    
+    # Prepare the input data from the UI
+    new_data <- data.frame(
+      Sexe = input$Sexe,
+      Age = input$Age,
+      Poid = input$Poid,
+      HabitudesConso = input$HabitudesConso,
+      FrequenceConsommation = input$FrequenceConsommation,
+      Sensibilité = input$Sensibilité,
+      Symptomes = input$Symptomes,
+      Alimentation = input$Alimentation,
+      Durée = input$Durée,
+      MomentConso = input$MomentConso,
+      ContexteFestif = input$ContexteFestif,
+      PbSanté = input$PbSanté,
+      Environnement = input$Environnement,
+      ActivitéPhys = input$ActivitéPhys,
+      StresseFatigue = input$StresseFatigue,
+      AutresSubstances = input$AutresSubstances,
+      PriseAlimentaire = input$PriseAlimentaire,
+      Soft = input$Soft,
+      Sommeil = input$Sommeil,
+      NbVerres = input$NbVerres,
+      TypeAlcool = input$TypeAlcool,
+      Mélange = input$Mélange
+    )
+    
+    # Predict using the model
+    prediction_result <- predict(model, new_data)
+    
+    if (as.integer(prediction_result) == 1) {
+      result <- "pas de gueule de bois"
+      # Display alert for no hangover
+      shinyalert("À savourer sans compter !", "Mais attention, l'excès d'alcool nuit gravement à votre santé... et à vos compétences en danse !", type = "info")
+    } else if (as.integer(prediction_result) == 2) {
+      result <- "gueule de bois"
+      # Display alert for hangover
+      shinyalert("Consommez un aliment riche en graisses, hydratez-vous suffisamment et reposez-vous", type = "warning")
+    }
+    
+    # Display the prediction result
+    output$prediction <- renderText({
+      as.character(result)
+    })
+    
+    
+    
+    # Display model metrics
+    output$accuracy <- renderText({
+      as.character(as.numeric(accuracy_result))
+    })
+    output$f1 <- renderText({
+      as.character(as.numeric(f1_result))
+    })
+  })
+}
+
+# Run the application
+shinyApp(ui = ui, server = server)
+
+```

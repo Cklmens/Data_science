@@ -1,0 +1,436 @@
+---
+title: "Survey R Notebook"
+output: word_document 
+---
+ 
+
+```{r,results='hide' }
+library(tidyverse)
+library(tidymodels)
+library(xgboost)
+library(readxl)        # For reading Excel files
+library(dplyr)         # For data manipulation
+library(ggplot2)       # For plotting
+library(caret)         # For machine learning
+library(randomForest)  # For RandomForest
+library(e1071)         # For SVM
+library(xgboost)       # For Gradient Boosting
+library(corrplot)      # For correlation matrix
+library(reshape2)      # For reshaping data
+library(MLmetrics)     # For evaluation metrics
+
+
+```
+# 2. Loading Data
+
+```{r}
+survey_data <- read_excel('Survey_retreat.xlsx')
+
+column_name_mapping <- c(
+  'Age Group' = 'age_group',
+  'Gender' = 'gender',
+  'Study Program' = 'study_program',
+  'Study Semester' = 'study_semester',
+  'Is German Your Native Language?' = 'native_language_german',
+  'Current GPA' = 'current_gpa',
+  'Learning Method' = 'learning_method',
+  'Study Time Outside Classes' = 'study_time_outside_classes',
+  'How Motivated Are You to Learn?' = 'learning_motivation',
+  'Stressed While Learning?' = 'stress_while_learning',
+  'How Do You Experience Exam Stress?' = 'exam_stress_experience',
+  'What’s Your Learning Style?' = 'learning_style',
+  'How Often Do You Reflect on Your Learning Strategy?' = 'learning_strategy_reflection',
+  'Received Regular Feedback?' = 'regular_feedback_received',
+  'Received Detailed Feedback After Tests?' = 'detailed_feedback_received',
+  'Was Learning Material Tailored to Strengths/Weaknesses?' = 'tailored_material',
+  'Do You Use Repetition to Reinforce Learning?' = 'use_repetition',
+  'Do You Reflect on Your Learning Methods?' = 'reflect_on_methods',
+  'Is Your Phone Nearby While Studying?' = 'phone_nearby',
+  'Do You Keep Your Phone On for Learning Tools?' = 'phone_on_for_tools',
+  'Which Apps Do You Use Most?' = 'most_used_apps',
+  'Do You Take Study Breaks and What Do You Do?' = 'study_break_activities'
+)
+
+# Rename columns
+colnames(survey_data) <- column_name_mapping[colnames(survey_data)]
+
+
+```
+
+# 3. One-Hot Encoding
+
+```{r}
+# Helper function for one-hot encoding
+one_hot_encode_column <- function(df, column, delimiter = ';') {
+  # Split the values and create one-hot encoding
+  df_split <- strsplit(as.character(df[[column]]), delimiter)
+  df_onehot <- data.frame(matrix(0, nrow = nrow(df), ncol = length(unique(unlist(df_split)))))
+  colnames(df_onehot) <- paste0(column, "_", 1:ncol(df_onehot))
+  
+  for (i in 1:nrow(df)) {
+    vals <- df_split[[i]]
+    df_onehot[i, which(colnames(df_onehot) %in% vals)] <- 1
+  }
+  return(df_onehot)
+}
+
+# One-hot encode 'most_used_apps' and 'learning_style'
+most_used_apps_encoded <- one_hot_encode_column(survey_data, 'most_used_apps', delimiter = ';')
+learning_style_encoded <- one_hot_encode_column(survey_data, 'learning_style', delimiter = ',')
+
+# Merge back to survey data
+survey_data <- cbind(survey_data, most_used_apps_encoded, learning_style_encoded)
+survey_data <- survey_data[, !colnames(survey_data) %in% c('most_used_apps', 'learning_style')]
+
+```
+
+# 4. Plots and Distributions
+
+```{r}
+# Charger la librairie ggplot2
+library(ggplot2)
+
+
+survey_data_20 <- survey_data[, 1:20]
+
+# Ouvrir une fenêtre de graphique plus grande
+dev.new(width = 12, height = 8)
+
+# Configurer la disposition des graphiques (grid)
+cols <- 3  # Nombre de colonnes dans la grille
+rows <- ceiling(ncol(survey_data_20) / cols)  # Calculer le nombre de lignes nécessaires
+par(mfrow = c(rows, cols), mar = c(3, 3, 2, 1))  # Définir la grille avec marges ajustées
+
+# Boucle sur chaque colonne pour générer les graphiques
+for (col in colnames(survey_data_20)) {
+  
+  # Si la variable est numérique (histogramme)
+  if (is.numeric(survey_data_20[[col]])) {
+    p <- ggplot(survey_data_20, aes_string(x = col)) +
+      geom_histogram(bins = 20, fill = "steelblue", color = "black", alpha = 0.7) +
+      ggtitle(paste("Distribution de", col)) +
+      theme_minimal() +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotation des labels sur l'axe x
+    
+    print(p)
+  }
+  
+  # Si la variable est catégorielle (bar plot avec couleurs pour chaque niveau)
+  else if (is.factor(survey_data_20[[col]]) || is.character(survey_data_20[[col]])) {
+    p <- ggplot(survey_data_20, aes_string(x = col, fill = col)) +
+      geom_bar(color = "black", alpha = 0.7) +
+      ggtitle(paste("Fréquence de", col)) +
+      theme_minimal() +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1)) +  # Rotation des labels sur l'axe x
+      scale_fill_brewer(palette = "Set3")  # Utilisation d'une palette de couleurs distinctes
+    
+    print(p)
+  }
+}
+
+```
+
+# 5. Ordinal Encoding
+
+```{r}
+# Ordinal encoding using factors
+survey_data_ordinal <- survey_data %>%
+  mutate(across(where(is.factor), as.integer))
+
+columns_to_factor=colnames(survey_data_ordinal)
+
+survey_data_ordinal <- survey_data_ordinal %>%
+  mutate(across(all_of(columns_to_factor), as.factor))
+
+```
+
+# 6. Cramér's V (Chi-squared Test)
+
+```{r, results='hide'}
+cramers_v <- function(chi2, n, k, l) {
+  sqrt(chi2 / (n * (min(k, l) - 1)))
+}
+
+ordinal_vars <- colnames(survey_data_ordinal)[1:20]
+coor_dict <- list()
+
+for (i in 1:(length(ordinal_vars) - 1)) {
+  for (j in (i + 1):length(ordinal_vars)) {
+    var1 <- ordinal_vars[i]
+    var2 <- ordinal_vars[j]
+    
+    # Create contingency table
+    contingency_table <- table(survey_data_ordinal[[var1]], survey_data_ordinal[[var2]])
+
+    # Ensure there are no empty cells before performing the chi-squared test
+    if (all(contingency_table > 0)) {
+      # Perform chi-squared test
+      chi2_test <- chisq.test(contingency_table)
+      
+      # Calculate Cramér's V
+      n <- sum(contingency_table)
+      k <- nrow(contingency_table)
+      l <- ncol(contingency_table)
+      v <- cramers_v(chi2_test$statistic, n, k, l)
+      
+      
+      
+      if (chi2_test$p.value < 0.05) {
+        if (v >= 0.6) {
+          cat(sprintf("Significant correlation between %s and %s.\n", var1, var2))
+          coor_dict[[var1]] <- c(coor_dict[[var1]], var2)
+          
+        }
+      } 
+      sprintf("-------------------------------------------- \n\n")  # Separator line between pairs
+    } else {
+      # If contingency table contains empty cells, skip to the next pair
+      next
+    }
+  }
+}
+
+# Print results
+coor_dict
+
+```
+
+# 7. Model Training and Evaluation
+
+
+
+```{r}
+set.seed(42)
+survey_data_ordinal_I <- survey_data_ordinal %>%
+  mutate(across(all_of(columns_to_factor), as.integer))
+
+# Split data into training and testing sets
+learning_data <- survey_data_ordinal[, 1:20] %>% initial_split(prop=0.8)
+data_training<- training(learning_data)
+data_test <- testing(learning_data)
+```
+
+```{r}
+rec <-recipe(current_gpa ~ .,data =data_training ) %>% step_impute_bag(impute_with=imp_vars(all_predictors()) ) %>%
+step_normalize(all_numeric_predictors()) 
+   
+metrics_to_collect <- metric_set(accuracy, roc_auc,f_meas)
+rec
+
+#step_corr(all_predictors()) %>% 
+
+```
+
+```{r}
+tree_mod <- decision_tree() %>% set_engine("rpart") %>% set_mode("classification")
+rf_mod <- rand_forest() %>% set_engine("ranger") %>% set_mode("classification")
+logreg_mod <- logistic_reg() %>% set_engine("glm") %>% set_mode("classification")
+xgb_mod <- boost_tree(trees = 1000,tree_depth = 6,sample_size = 0.8,  
+  mtry = tune()) %>% set_engine("xgboost") %>%set_mode("classification")
+
+```
+
+```{r}
+wf_rf<- workflow() %>% add_model(rf_mod) %>%  add_recipe(rec)
+wf_dt<- workflow() %>% add_model(tree_mod) %>%  add_recipe(rec)
+wf_logrec<- workflow() %>% add_model(logreg_mod) %>%  add_recipe(rec)
+wf_xgb <- workflow()%>% add_model(xgb_mod) %>% add_recipe(rec) 
+```
+
+```{r}
+cv_flods <- vfold_cv(data_training,v=10)
+
+```
+
+```{r,results='hide'}
+dt_met <- wf_dt %>%  fit_resamples(resamples = cv_flods,metrics = metrics_to_collect)   %>% collect_metrics()
+print(dt_met)
+```
+
+```{r,results='hide'}
+rf_met <- wf_rf %>%  fit_resamples(resamples = cv_flods,metrics = metrics_to_collect)   %>% collect_metrics()
+rf_met
+
+```
+
+```{r}
+
+library(rpart)
+library(rpart.plot)
+ plot_rpart<- rpart(survey_data_ordinal$current_gpa ~., data = survey_data_ordinal)
+ rpart.plot(plot_rpart)
+
+
+```
+
+```{r,results='hide'}
+data<- survey_data_ordinal[,0:20]
+
+# Step 2: Preprocess the data
+# Convert all categorical variables to factors
+data <- data %>%
+  mutate(across(where(is.character), as.factor))
+
+# Convert the target variable ("Current GPA") to a numeric factor
+data <- data %>%
+  mutate(current_gpa = as.numeric(factor(current_gpa)))
+
+# Drop any unnecessary columns (if needed)
+# Example: data <- data %>% select(-unnecessary_column)
+
+# Split the data into training and testing sets
+set.seed(123)  # For reproducibility
+train_index <- createDataPartition(data$current_gpa, p = 0.8, list = FALSE)
+train_data <- data[train_index, ]
+test_data <- data[-train_index, ]
+
+# Separate features (X) and target (y)
+train_x <- train_data %>% select(-current_gpa)
+train_y <- train_data$current_gpa
+test_x <- test_data %>% select(-current_gpa)
+test_y <- test_data$current_gpa
+
+# Convert categorical variables to dummy/one-hot encoded numeric matrix
+train_x <- model.matrix(~ . - 1, data = train_x)  # One-hot encoding
+test_x <- model.matrix(~ . - 1, data = test_x)    # One-hot encoding
+
+# Ensure the target variable starts from 0
+train_y <- train_y - 1
+test_y <- test_y - 1
+
+# Convert to matrix format for XGBoost
+train_matrix <- xgb.DMatrix(data = as.matrix(train_x), label = train_y)
+test_matrix <- xgb.DMatrix(data = as.matrix(test_x), label = test_y)
+
+# Step 3: Train the XGBoost model
+xgb_model <- xgboost(
+  data = train_matrix,
+  nrounds = 100,
+  objective = "multi:softmax",  # Multi-class classification
+  num_class = length(unique(train_y)),  # Number of classes
+  eval_metric = "mlogloss",
+  eta = 0.3,  # Learning rate
+  max_depth = 6,
+  verbose = 1
+)
+
+# Step 4: Evaluate the model
+# Predict on the test set
+pred <- predict(xgb_model, test_matrix)
+
+# Convert predictions back to the original labels
+pred_labels <- as.numeric(pred)
+
+# Confusion matrix
+conf_matrix=confusionMatrix(factor(pred_labels), factor(test_y))
+
+# Extract Accuracy
+accuracy <- conf_matrix$overall["Accuracy"]
+
+# Calculate F1-Score
+f1_score <- F1_Score(y_true = factor(test_y), y_pred = factor(pred_labels), positive = "1")  # Adjust "positive" as per your data
+
+# Print metrics
+cat("Accuracy:", accuracy, "\n")
+cat("F1-Score:", f1_score, "\n")
+```
+
+```{r}
+# Print metrics
+cat("Accuracy:", accuracy, "\n")
+cat("F1-Score:", f1_score, "\n")
+
+```
+
+
+```{r}
+library(reshape2)
+# Get feature importance
+importance <- xgb.importance(model = xgb_model)
+
+# Reformater les données
+importance_long <- melt(importance[1:10, ], id.vars = "Feature")
+
+# Graphe combinant Gain, Cover, et Frequency
+ggplot(importance_long, aes(x = reorder(Feature, value), y = value, fill = variable)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  coord_flip() +
+  scale_fill_manual(values = c("#FF5733", "#C70039", "#900C3F")) +
+  labs(
+    title = "Importance des Variables (Gain, Cover, Frequency)",
+    x = "Variables",
+    y = "Valeurs",
+    fill = "Métrique"
+  ) +
+  theme_minimal(base_size = 10) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    legend.position = "top"
+  )
+
+
+
+
+```
+
+
+
+
+
+```{r}
+data<- read_excel('Survey_logrec.xlsx')
+# Ensure the target variable is categorical and convert it to a factor
+data$current_gpa <- as.factor(data$current_gpa)
+
+
+# Step 1: Split data (if not already split)
+set.seed(123)  # Set seed for reproducibility
+data_split <- initial_split(data, prop = 0.8)  # 80% for training
+train_data <- training(data_split)
+test_data <- testing(data_split)
+
+# Step 2: Create a recipe
+# The recipe will help preprocess the data (e.g., scaling, centering, handling missing data)
+recipe <- recipe(current_gpa ~ ., data = train_data) %>%
+  step_naomit(all_predictors())  # Remove any rows with missing values
+
+# Step 3: Define the logistic regression model with glm engine
+logistic_model <- logistic_reg() %>%
+  set_engine("glm") %>%
+  set_mode("classification")
+
+# Step 4: Create a workflow that combines the recipe and the model
+workflow_model <- workflow() %>%
+  add_model(logistic_model) %>%
+  add_recipe(recipe)
+
+# Step 5: Fit the model
+fitted_model <- fit(workflow_model, data = train_data)
+
+# Step 6: Make predictions on the test data
+predictions <- predict(fitted_model, new_data = test_data)  # Get probabilities
+
+
+conf_matrix <- confusionMatrix( predictions$.pred_class, test_data$current_gpa)
+
+# Print confusion matrix and accuracy
+print(conf_matrix)
+
+# Calculate accuracy and F1-score
+accuracy <- conf_matrix$overall["Accuracy"]
+f1_score <- conf_matrix$byClass["F1"]
+
+print(paste("Accuracy:", accuracy))
+
+
+
+```
+
+
+
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.

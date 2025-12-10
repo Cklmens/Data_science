@@ -1,0 +1,274 @@
+---
+title: ' Impact des Frères et Sœurs sur les Choix de Boisson au Bar : Exploration du Lien de Causalité '
+date: "`r Sys.Date()`"
+output: 
+always_allow_html: true
+
+---
+
+## Chargement des données 
+```{r, include=FALSE}
+options(tinytex.verbose = TRUE)
+```
+
+
+```{r}
+library(readxl)
+library(tidyverse)
+library(tidymodels)
+library(seminr)
+
+
+#Hangover <- read.csv2("C:\\Users\\djana\\OneDrive\\Documents\\GitHub\\Fiverr\\BSD-Recherche.csv")
+Hangover <- read_excel("C:\\Users\\djana\\OneDrive\\Documents\\GitHub\\Fiverr\\BSD-Recherche.xlsx")
+View(Hangover)
+```
+
+## Visualisation des données 
+
+
+```{r}
+str(Hangover)
+```
+```{r}
+Hangover_retreat=Hangover[0:23]
+
+```
+
+##Analyse de nos variables de causalité
+
+```{r}
+lapply(Hangover_retreat[16], unique)
+```
+```{r}
+lapply(Hangover_retreat[5], unique)
+```
+##Création des variables
+
+Les colonnes qui nous intèressent sont NbFS et Choix de boisson 
+Nous devons retraiter les données
+
+
+
+
+```{r}
+data <- Hangover_retreat[16]
+
+# Définir les catégories uniques de boissons
+types_boisson <- c("Biere", "Vin", "Cocktail", "Alcool fort", "Boisson Non alcoolisee")
+
+# Créer les colonnes binaires
+data_binary <- data %>%
+  mutate(
+    Biere = as.integer(str_detect(TypeBoisson, "Biere")),
+    Vin = as.integer(str_detect(TypeBoisson, "Vin")),
+    Cocktail = as.integer(str_detect(TypeBoisson, "Cocktail")),
+    `Alcool fort` = as.integer(str_detect(TypeBoisson, "Alcool fort")),
+    `Boisson Non alcoolisee` = as.integer(str_detect(TypeBoisson, "Boisson Non alcoolisee"))
+  ) %>%
+  select(-TypeBoisson)  
+    # Afficher le résultat
+```
+
+```{r}
+
+```
+
+
+
+```{r}
+NbTotalFS <- as.integer(Hangover$NbTotalFS)
+Choyee <- as.integer(factor(Hangover$Choyee))
+PressionSociale <- as.integer(factor(Hangover$PressionSociale))
+EnfantEpargne <- as.integer(factor(Hangover$EnfantEpargne))
+FrequenceBar <- as.integer(factor(Hangover$FrequenceBar))
+
+resultat <- cbind(NbTotalFS,Choyee,PressionSociale,EnfantEpargne, FrequenceBar,data_binary)
+resultat <- resultat[1:100,]
+print(resultat)
+
+```
+```{r}
+str(resultat)
+```
+##Causalité entre le nombre de frère et soeur et le choix des boisson
+
+
+
+```{r}
+variable = constructs(
+reflective("NbTotalFS", single_item("NbTotalFS")),
+reflective("Choyee", single_item("Choyee")),
+reflective("EnfantEpargne", single_item("EnfantEpargne")),
+reflective("FrequenceBar", single_item("FrequenceBar")),
+reflective("PressionSociale", single_item("PressionSociale")),
+reflective("Biere", single_item("Biere")),
+reflective("Vin", single_item("Vin")),
+reflective("Cocktail", single_item("Cocktail")),
+reflective("Alcool fort", single_item("Alcool fort")),
+reflective("Boisson Non alcoolisee", single_item("Boisson Non alcoolisee"))
+)
+```
+
+## Définition des relations de causalité
+
+```{r}
+# Définir les relations causales
+causal <- relationships(
+  paths(from = "NbTotalFS"  ,
+        to = c("Choyee", "EnfantEpargne", "FrequenceBar", "PressionSociale")),
+  
+  paths(from = c("Choyee", "EnfantEpargne", "FrequenceBar", "PressionSociale")  ,
+        to = c("Biere", "Vin", "Cocktail", "Alcool fort", "Boisson Non alcoolisee"))
+)
+```
+
+## Estimation du modèle
+
+```{r}
+# Estimer le modèle PLS
+modele <- estimate_pls(data = resultat, 
+                       measurement_model = variable, 
+                       structural_model = causal)
+
+# Résumer les résultats
+summary(modele)
+
+# Visualiser le modèle
+plot(modele)
+```
+```{r}
+bobo = bootstrap_model(modele, nboot = 500, seed = 34)
+plot(bobo)
+```
+
+## Causalité entre la position dans la famille et le choix de boisson
+
+Création de nos données 
+
+```{r}
+lapply(Hangover_retreat[6], unique)
+```
+
+
+```{r}
+Position <- as.integer(factor(Hangover$Position))
+Choyee <- as.integer(factor(Hangover$Choyee))
+PressionSociale <- as.integer(factor(Hangover$PressionSociale))
+EnfantEpargne <- as.integer(factor(Hangover$EnfantEpargne))
+FrequenceBar <- as.integer(factor(Hangover$FrequenceBar))
+
+result <- cbind(Position,Choyee,PressionSociale,EnfantEpargne, FrequenceBar,
+                data_binary)
+result <- result[1:100,]
+print(result)
+```
+```{r}
+variable = constructs(
+reflective("Position", single_item("Position")),
+reflective("Choyee", single_item("Choyee")),
+reflective("EnfantEpargne", single_item("EnfantEpargne")),
+reflective("FrequenceBar", single_item("FrequenceBar")),
+reflective("PressionSociale", single_item("PressionSociale")),
+reflective("Biere", single_item("Biere")),
+reflective("Vin", single_item("Vin")),
+reflective("Cocktail", single_item("Cocktail")),
+reflective("Alcool fort", single_item("Alcool fort")),
+reflective("Boisson Non alcoolisee", single_item("Boisson Non alcoolisee"))
+)
+```
+## Définition des relations de causalité
+
+```{r}
+# Définir les relations causales
+causal <- relationships(
+  paths(from ="Position" ,
+        to = c("Choyee", "EnfantEpargne", "FrequenceBar", "PressionSociale")),
+    paths(from = c("Choyee", "EnfantEpargne", "FrequenceBar", "PressionSociale")  ,
+        to = c("Biere", "Vin", "Cocktail", "Alcool fort", "Boisson Non alcoolisee"))
+)
+```
+
+## Estimation du modèle
+
+```{r}
+# Estimer le modèle PLS
+model <- estimate_pls(data = result, 
+                       measurement_model = variable, 
+                       structural_model = causal)
+
+# Résumer les résultats
+summary(model)
+
+```
+
+```{r}
+bobo = bootstrap_model(model, nboot = 500, seed = 34)
+plot(bobo)
+```
+
+## Resumé des deux causalités
+
+```{r}
+Choyee <- as.integer(factor(Hangover$Choyee))
+PressionSociale <- as.integer(factor(Hangover$PressionSociale))
+EnfantEpargne <- as.integer(factor(Hangover$EnfantEpargne))
+FrequenceBar <- as.integer(factor(Hangover$FrequenceBar))
+
+resultats <- cbind(NbTotalFS,
+                result)
+
+print(resultats)
+
+```
+
+```{r}
+variable = constructs(
+reflective("NbTotalFS", single_item("NbTotalFS")),
+reflective("Position", single_item("Position")),
+reflective("Choyee", single_item("Choyee")),
+reflective("EnfantEpargne", single_item("EnfantEpargne")),
+reflective("FrequenceBar", single_item("FrequenceBar")),
+reflective("PressionSociale", single_item("PressionSociale")),
+reflective("Biere", single_item("Biere")),
+reflective("Vin", single_item("Vin")),
+reflective("Cocktail", single_item("Cocktail")),
+reflective("Alcool fort", single_item("Alcool fort")),
+reflective("Boisson Non alcoolisee", single_item("Boisson Non alcoolisee"))
+)
+```
+## Définition des relations de causalité
+
+```{r}
+# Définir les relations causales
+causal <- relationships(
+  paths(from =c("NbTotalFS","Position") ,
+        to =c("Choyee", "EnfantEpargne", "FrequenceBar", "PressionSociale") ),
+  paths(from = c("Choyee", "EnfantEpargne", "FrequenceBar", "PressionSociale")  ,
+        to = c("Biere", "Vin", "Cocktail", "Alcool fort", "Boisson Non alcoolisee"))
+  
+)
+```
+
+## Estimation du modèle
+
+```{r}
+# Estimer le modèle PLS
+models <- estimate_pls(data = resultats, 
+                       measurement_model = variable, 
+                       structural_model = causal)
+
+# Résumer les résultats
+summary(models)
+
+
+```
+
+```{r}
+bobo = bootstrap_model(models, nboot = 500, seed = 34)
+plot(bobo)
+```
+
+
+
+
